@@ -3,26 +3,21 @@
 
 const int COMMON_CATHODE = 1;
 const int COMMON_ANODE   = 2;
-//
+
 // SET YOUR DISPLAY TYPE HERE
-//
 const int LED_DISPLAY_TYPE = COMMON_CATHODE;
 
 // Uncomment the following #define if you want to check the 7-segment display
-// 3 signalling LEDs and clipping LED continuously for testing purposes.
+// and 2 signalling LEDs
 // Leave it commented out if you want to run the tuner.
 
 //#define LED_TEST
 
-// DO NOT CHANGE ANYTHING BELOW THIS LINE
-//-------------------------------------------------------------------------------------------
 // LED OUTPUT PINS
 int LED1 = 7;
 int LED2 = 8;
 
-
-// 9 segment display output pins;
-
+// 9 segment display output pins
 int LEDE = 6;
 int LEDD = 5;
 int LEDC = 3;
@@ -32,25 +27,17 @@ int LEDA = A5;
 int LEDF = A4;
 int LEDG = A3;
 
-// Data storage variables.
-byte newData = 0;
-byte prevData = 0;
-
-// Freq variables.
-unsigned int period;
+// Data storage variables
+volatile int impulse_cnt;
+unsigned long last_read_time;
 int frequency;
 
-volatile int impulse_cnt = 0;
-unsigned long last_read;
 
-#define HALF_SAMPLE_VALUE 127
-
-
+// Decode led pattern and switch on/off the leds
 void setLeds(String segments) {
     digitalWrite(LED1,  segments[0] ==  '1' ? LOW : HIGH);
     digitalWrite(LED2,  segments[2] ==  '1' ? LOW : HIGH);
   if (LED_DISPLAY_TYPE == COMMON_CATHODE) {
-    // Decode led pattern and switch on/off the leds.
     digitalWrite(LEDE,  segments[3] ==  '0' ? LOW : HIGH);
     digitalWrite(LEDD,  segments[4] ==  '0' ? LOW : HIGH);
     digitalWrite(LEDC,  segments[5] ==  '0' ? LOW : HIGH);
@@ -77,7 +64,11 @@ const int frequencyTable[] = {
   // Note, this table contains frequency values multiplied by 10 
   // so that one decimal value is included.
   // A4 which in an equal tempered scale is at 440 Hz, is represented by 4400 in the table.
-  //
+  //format:
+  //low start C0, low end C0, low start C1, low end C1, ...
+  //perfect start C0, perfect end C0, perfect start C1, perfect end C1, ...
+  //high start C0, high end C0, high start C1, high end C1, ...
+  
   158, 161, 318, 323,  636,  650, 1272, 1302, 2550, 2590, 5155,  5170, 10180, 10320, //C
   161, 165, 323, 330,  650,  660, 1302, 1315, 2590, 2640, 5170,  5300, 10320, 10730,
   165, 168, 330, 336,  660,  674, 1315, 1350, 2640, 2690, 5300,  5400, 10730, 11000,
@@ -88,7 +79,7 @@ const int frequencyTable[] = {
   181, 185, 364, 370,  731,  741, 1461, 1475, 2923, 2955, 5820,  5930, 0,     0,
   185, 188, 370, 377,  741,  756, 1475, 1512, 2955, 3020, 5920,  6080, 0,     0,
   181, 192, 377, 386,  756,  776, 1512, 1548, 3020, 3090, 6080,  6190, 0,     0, // D#
-  192, 196, 386, 392,  776,  785, 1548, 1563, 3090, 3125, 6180,  6300, 0,     0, // is the 6300 value correct?
+  192, 196, 386, 392,  776,  785, 1548, 1563, 3090, 3125, 6180,  6300, 0,     0,
   196, 201, 392, 400,  785,  799, 1563, 1602, 3125, 3200, 6290,  6440, 0,     0,
   201, 203, 400, 408,  799,  816, 1602, 1640, 3200, 3270, 6440,  6550, 0,     0, // E
   203, 208, 408, 415,  816,  829, 1640, 1656, 3270, 3330, 6540,  6660, 0,     0,
@@ -302,14 +293,17 @@ void checkNotes()
   }
 }
 
+//Interrupt triggered by any change od digital state of A0
 ISR(PCINT1_vect)
 {
-  if(digitalRead(A0)) impulse_cnt++;
+  if(digitalRead(A0)) impulse_cnt++; //impulse_cnt inctemented on rising edge
 }
 
 void setup() {
-  PCICR |= B00000010;
-  PCMSK1 |= B00000001;
+
+  PCICR |= B00000010; //enable PCINT Port C
+  PCMSK1 |= B00000001; //unmask pin A0 (PCINT8)
+
   pinMode(LED1, OUTPUT);
   pinMode(LED2, OUTPUT);
 
@@ -324,17 +318,14 @@ void setup() {
 
   Serial.begin(9600);
 
+    impulse_cnt = 0;
+    last_read_time = millis();
   
 #ifndef LED_TEST
   testLedsIndividually(100);
-  //testMusicalChars(50);
-  //testLedsIndividually(50);
-  //testMusicalChars(50);
+  //testMusicalChars(100);
 #endif
 }
-//Port C, PC0; PCINT8
-//PCICR B00000010
-//PMSK1 B00000001
 
 
 
@@ -348,19 +339,14 @@ void loop() {
 
   if(impulse_cnt >= 100)
   {
-    double curr_read = millis();
-    double time = (curr_read - last_read) / impulse_cnt;
+    double curr_read_time = millis();
+    double time = (curr_read_time - last_read_time) / impulse_cnt;
     frequency = 1.0 / (time/1000.0) * 10;
 
     impulse_cnt = 0;
-    last_read = curr_read;
+    last_read_time = curr_read_time;
     
     checkNotes();
   }
-
-  //Serial.println(impulse_cnt);
-  //Serial.print(frequency / 10);
-//  Serial.println(F("Hz"));
-
 }
 #endif
